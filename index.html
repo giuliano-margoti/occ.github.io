@@ -1,1 +1,228 @@
-hello
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabela de Ocultações</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            color: #333;
+        }
+        
+        .controls {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+        }
+
+        /* Estilo da barra de pesquisa */
+        #searchInput {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            box-sizing: border-box;
+        }
+
+        /* Estilo da área onde ficam as checkboxes de colunas */
+        .column-toggles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .column-toggles label {
+            cursor: pointer; /* Muda o mouse para uma "mão" ao passar por cima */
+            background: #eef;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+
+        /* Estilos da Tabela */
+        table {
+            width: 100%;
+            border-collapse: collapse; /* Remove os espaços duplos entre as bordas */
+            font-size: 14px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #0056b3;
+            color: white;
+            position: sticky; /* Faz o cabeçalho acompanhar a rolagem da tela */
+            top: 0;
+        }
+
+        /* Colore linhas alternadas para facilitar a leitura */
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        tr:hover { background-color: #ddd; } /* Destaca a linha ao passar o mouse */
+    </style>
+</head>
+<body>
+
+    <h1>Banco de dados das ocultações</h1>
+
+    <div class="controls">
+        <input type="text" id="searchInput" placeholder="🔍">
+        
+        <p><strong>Escolha quais colunas deseja visualizar:</strong></p>
+        <div id="columnToggles" class="column-toggles"></div>
+    </div>
+
+    <table id="dataTable">
+        <thead id="tableHead">
+            </thead>
+        <tbody id="tableBody">
+            </tbody>
+    </table>
+
+    <script>
+        // 1. DEFINIÇÕES INICIAIS
+        // URL do Google Sheets
+        // Isso força o Google a entregar os dados como um arquivo CSV.
+        const sheetUrl = 'https://docs.google.com/spreadsheets/d/1tgQwKteb7pOUtHGCw8cToX1mGqdx7A8YTDHQuVAtGao/gviz/tq?tqx=out:csv';
+
+        // Colunas padrão.
+        // Os nomes devem ser EXATAMENTE iguais aos que estão no cabeçalho da planilha.
+        const defaultColumns = ['Name', 'Number', 'Date', 'Chords', 'Radius (Equatorial)'];
+
+        // Variáveis para guardar dados na memória do navegador
+        let allData = [];      // Vai guardar todas as linhas da planilha
+        let allColumns = [];   // Vai guardar os nomes de todas as colunas
+        let visibleColumns = new Set(defaultColumns); // Guarda quais colunas estão visíveis no momento
+
+        // 2. BUSCAR OS DADOS 
+        // O Papa.parse vai até o link do Google Sheets, faz o download do CSV e converte para objetos Javascript.
+        Papa.parse(sheetUrl, {
+            download: true, // Diz para baixar a partir de um link
+            header: true,   // Avisa que a primeira linha contém os nomes das colunas
+            skipEmptyLines: true, // Ignora linhas em branco no final da planilha
+            complete: function(results) {
+                // Esta função roda quando o download e a conversão terminarem!
+                
+                allData = results.data; // Salvamos os dados
+                allColumns = results.meta.fields; // Salvamos os nomes das colunas
+                
+                // Chama as funções que desenham a tela
+                createColumnCheckboxes();
+                renderTable();
+            },
+            error: function(err) {
+                // Caso algo dê errado (planilha trancada, sem internet, etc)
+                alert("Erro ao carregar dados da planilha.");
+                console.error(err);
+            }
+        });
+
+        // 3. CRIAR OS CHECKBOXES DE COLUNAS
+        function createColumnCheckboxes() {
+            const container = document.getElementById('columnToggles');
+            container.innerHTML = ''; // Limpa o container
+
+            // Passamos por cada coluna que existe na planilha
+            allColumns.forEach(colName => {
+                // Cria um <label> (o texto clicável)
+                const label = document.createElement('label');
+                
+                // Cria o <input> do tipo checkbox
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = colName;
+                
+                // Se a coluna estiver na lista de visíveis, deixa marcada
+                if (visibleColumns.has(colName)) {
+                    checkbox.checked = true;
+                }
+
+                // Adicionamos um ouvinte que avisa quando o usuário clicar no checkbox
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        visibleColumns.add(colName); // Adiciona na lista de visíveis
+                    } else {
+                        visibleColumns.delete(colName); // Remove da lista de visíveis
+                    }
+                    renderTable(); // Toda vez que marca/desmarca, redesenha a tabela
+                });
+
+                // Junta o checkbox e o nome da coluna dentro do label, e coloca na tela
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(" " + colName));
+                container.appendChild(label);
+            });
+        }
+
+        // 4. ATUALIZAR A TABELA NA TELA
+        function renderTable() {
+            const term = document.getElementById('searchInput').value.toLowerCase();
+            const thead = document.getElementById('tableHead');
+            const tbody = document.getElementById('tableBody');
+
+            // --- A. Filtragem ---
+            // Filtrar allData baseado no que o usuário digitou
+            const filteredData = allData.filter(row => {
+                // Se não tiver nada digitado, mostra tudo (retorna true)
+                if (!term) return true; 
+
+                // Pega o Nome e o Número da linha atual. Se estiverem vazios, usa texto vazio ('').
+                const name = (row['Name'] || '').toLowerCase();
+                const number = (row['Number'] || '').toLowerCase();
+
+                // Verifica se o texto digitado (term) existe dentro do nome ou do número
+                return name.includes(term) || number.includes(term);
+            });
+
+            // --- B. Cabeçalho (<th>) ---
+            thead.innerHTML = ''; // Limpa cabeçalho antigo
+            const headerRow = document.createElement('tr');
+            
+            // Só desenha o cabeçalho das colunas que estão visíveis
+            allColumns.forEach(colName => {
+                if (visibleColumns.has(colName)) {
+                    const th = document.createElement('th');
+                    th.textContent = colName;
+                    headerRow.appendChild(th);
+                }
+            });
+            thead.appendChild(headerRow);
+
+            // --- C. Corpo da Tabela (<td>) ---
+            tbody.innerHTML = ''; // Limpa linhas antigas
+            
+            filteredData.forEach(row => {
+                const tr = document.createElement('tr');
+                
+                // Para cada linha, cria as células, mas só para as colunas visíveis
+                allColumns.forEach(colName => {
+                    if (visibleColumns.has(colName)) {
+                        const td = document.createElement('td');
+                        td.textContent = row[colName] || ''; // Se a célula não tiver dado, fica vazia
+                        tr.appendChild(td);
+                    }
+                });
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 5. EVENTO DE DIGITAÇÃO NO FILTRO
+        // Avisa o sistema para redesenhar a tabela toda vez que o usuário soltar uma tecla no campo de busca
+        document.getElementById('searchInput').addEventListener('keyup', renderTable);
+
+    </script>
+</body>
+</html>
