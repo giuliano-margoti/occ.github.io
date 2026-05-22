@@ -66,6 +66,13 @@
             color: white;
             position: sticky; /* Faz o cabeçalho acompanhar a rolagem da tela */
             top: 0;
+            /* Evita que o texto seja selecionado se o usuário clicar rápido várias vezes para ordenar */
+            user-select: none;
+        }
+
+        /* Adiciona um efeito visual de clique no cabeçalho */
+        th:hover { 
+            background-color: #004494; 
         }
 
         /* Colore linhas alternadas para facilitar a leitura */
@@ -94,8 +101,8 @@
     <script>
         // 1. DEFINIÇÕES INICIAIS
         // URL do Google Sheets
-        // Isso força o Google a entregar os dados como um arquivo CSV.
-        const sheetUrl = 'https://docs.google.com/spreadsheets/d/1tgQwKteb7pOUtHGCw8cToX1mGqdx7A8YTDHQuVAtGao/gviz/tq?tqx=out:csv';
+        // Final export?format=csv. Isso força o Google a entregar os dados como um arquivo CSV, evitando o problema de juntar a primeira linha com o cabeçalho.
+        const sheetUrl = 'https://docs.google.com/spreadsheets/d/1tgQwKteb7pOUtHGCw8cToX1mGqdx7A8YTDHQuVAtGao/export?format=csv';
 
         // Colunas padrão.
         // Os nomes devem ser EXATAMENTE iguais aos que estão no cabeçalho da planilha.
@@ -105,6 +112,10 @@
         let allData = [];      // Vai guardar todas as linhas da planilha
         let allColumns = [];   // Vai guardar os nomes de todas as colunas
         let visibleColumns = new Set(defaultColumns); // Guarda quais colunas estão visíveis no momento
+
+        // Variáveis para controlar a ordenação da tabela. Começa ordenando por "Date"
+        let currentSortColumn = 'Date';
+        let isAscending = true;
 
         // 2. BUSCAR OS DADOS 
         // O Papa.parse vai até o link do Google Sheets, faz o download do CSV e converte para objetos Javascript.
@@ -174,7 +185,8 @@
 
             // --- A. Filtragem ---
             // Filtrar allData baseado no que o usuário digitou
-            const filteredData = allData.filter(row => {
+            // Lista precisará ser reordenada no passo B
+            let filteredData = allData.filter(row => {
                 // Se não tiver nada digitado, mostra tudo (retorna true)
                 if (!term) return true; 
 
@@ -186,7 +198,25 @@
                 return name.includes(term) || number.includes(term);
             });
 
-            // --- B. Cabeçalho (<th>) ---
+            // --- B. Ordenação ---
+            // Organiza as linhas filtradas antes de desenhá-las na tela
+            filteredData.sort((a, b) => {
+                let valA = a[currentSortColumn] || '';
+                let valB = b[currentSortColumn] || '';
+
+                // Tenta converter para número para ordenar valores matemáticos corretamente
+                let numA = parseFloat(valA);
+                let numB = parseFloat(valB);
+
+                if (!isNaN(numA) && !isNaN(numB) && valA.trim() !== '' && valB.trim() !== '') {
+                    return isAscending ? numA - numB : numB - numA;
+                }
+
+                // Se não for número, ordena como texto/data
+                return isAscending ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            });
+
+            // --- C. Cabeçalho (<th>) ---
             thead.innerHTML = ''; // Limpa cabeçalho antigo
             const headerRow = document.createElement('tr');
             
@@ -195,12 +225,30 @@
                 if (visibleColumns.has(colName)) {
                     const th = document.createElement('th');
                     th.textContent = colName;
+
+                    // Adiciona a seta (▲/▼) na coluna que está sendo usada para ordenar
+                    if (colName === currentSortColumn) {
+                        th.textContent += isAscending ? ' ▲' : ' ▼';
+                    }
+
+                    // Configura o evento de clique no cabeçalho para ordenar a tabela
+                    th.style.cursor = 'pointer';
+                    th.onclick = function() {
+                        if (currentSortColumn === colName) {
+                            isAscending = !isAscending; // Se já está nesta coluna, só inverte a direção
+                        } else {
+                            currentSortColumn = colName; // Se é uma coluna nova, adota ela
+                            isAscending = true;
+                        }
+                        renderTable(); // Redesenha a tabela
+                    };
+
                     headerRow.appendChild(th);
                 }
             });
             thead.appendChild(headerRow);
 
-            // --- C. Corpo da Tabela (<td>) ---
+            // --- D. Corpo da Tabela (<td>) ---
             tbody.innerHTML = ''; // Limpa linhas antigas
             
             filteredData.forEach(row => {
@@ -226,3 +274,5 @@
     </script>
 </body>
 </html>
+
+```
